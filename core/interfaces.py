@@ -27,7 +27,7 @@ class AudioDetector(ABC):
     """
 
     @abstractmethod
-    def start(self, callback: Callable[[], None]) -> None:
+    def start(self, callback: Callable[[int], None]) -> None:
         """
         Inicia a escuta contínua.
 

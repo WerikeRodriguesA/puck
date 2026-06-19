@@ -6,9 +6,6 @@ Responsabilidade deste arquivo:
 
     main.py NÃO implementa lógica de negócio.
     Ele monta as peças, define o que acontece em cada evento, e espera.
-
-    Quando o FastAPI chegar, este arquivo ficará como CLI runner.
-    A lógica de inicialização migrará para um Application container.
 """
 
 import signal
@@ -39,24 +36,65 @@ def main() -> None:
     logger = get_logger(__name__)
     logger.info("Puck iniciando...")
 
-    # ── 3. Monta os módulos (Dependency Injection manual) ────────────────────
+    # ── 3. Monta os módulos ───────────────────────────────────────────────────
     mode_manager = ModeManager(settings)
     launcher = WindowsAppLauncher(settings, mode_manager)
     monitor = PsutilSystemMonitor()
     detector = ClapDetector(settings)
 
-    # ── 4. Define o que acontece ao detectar dupla palma ────────────────────
-    default_mode = settings.get("default_mode", "ads")
+    # ── 4. Lê o mapeamento de palmas → modos do config.yaml ──────────────────
+    #
+    # Estrutura esperada no config.yaml:
+    #   clap_modes:
+    #     2: ads
+    #     3: estudo
+    #     4: gamer
+    #
+    # YAML carrega chaves numéricas como int — fazemos a conversão explícita
+    # para garantir que a busca por chave funcione independente do tipo.
+    raw_clap_modes = settings.get("clap_modes", {})
+    clap_modes: dict[int, str] = {int(k): str(v) for k, v in raw_clap_modes.items()}
 
-    def on_double_clap() -> None:
+    # Fallback: se clap_modes não estiver configurado, usa o default_mode para 2 palmas
+    if not clap_modes:
+        default_mode = settings.get("default_mode", "ads")
+        clap_modes = {2: default_mode}
+        logger.warning(
+            f"'clap_modes' não encontrado no config.yaml. "
+            f"Usando fallback: 2 palmas → {default_mode}"
+        )
+
+    logger.info(
+        f"Modos disponíveis: {mode_manager.list_modes()} | "
+        f"Mapeamento: { {k: v for k, v in clap_modes.items()} }"
+    )
+
+    # ── 5. Define o callback de detecção ─────────────────────────────────────
+    def on_clap_sequence(clap_count: int) -> None:
         """
-        Callback disparado pelo ClapDetector.
+        Chamado pelo ClapDetector ao final de cada sequência de palmas.
 
-        Este é o ponto de integração entre áudio e automação.
-        O detector não sabe o que isso faz — só chama esta função.
+        Recebe a contagem e decide qual modo ativar consultando clap_modes.
+        Se a contagem não estiver mapeada, loga aviso e não faz nada.
+
+        Separação de responsabilidades:
+            - ClapDetector: conta palmas e entrega o número
+            - on_clap_sequence: traduz número → nome do modo
+            - launcher.launch_mode: executa o modo
         """
-        logger.info("Dupla palma detectada — ativando sistema")
+        logger.info(f"Sequência recebida: {clap_count} palma(s)")
 
+        mode_name = clap_modes.get(clap_count)
+
+        if not mode_name:
+            modos_disponiveis = sorted(clap_modes.keys())
+            logger.warning(
+                f"{clap_count} palma(s) não mapeada(s). "
+                f"Contagens configuradas: {modos_disponiveis}"
+            )
+            return
+
+        # Log de status do sistema antes de ativar
         report = monitor.get_full_report()
         logger.info(
             f"Sistema: CPU {report['cpu']['usage_percent']}% | "
@@ -64,9 +102,10 @@ def main() -> None:
             f"Disco {report['disk']['percent']}%"
         )
 
-        launcher.launch_mode(default_mode)
+        logger.info(f"{clap_count} palma(s) → ativando modo '{mode_name}'")
+        launcher.launch_mode(mode_name)
 
-    # ── 5. Configura encerramento gracioso ────────────────────────────────────
+    # ── 6. Configura encerramento gracioso ────────────────────────────────────
     def shutdown(signum, frame) -> None:
         logger.info("Encerrando Puck...")
         detector.stop()
@@ -76,14 +115,9 @@ def main() -> None:
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    # ── 6. Inicia detector e aguarda ─────────────────────────────────────────
-    logger.info(
-        f"Modos disponíveis: {mode_manager.list_modes()} | "
-        f"Modo padrão: {default_mode}"
-    )
-    logger.info("Aguardando dupla palma para ativar...")
-
-    detector.start(callback=on_double_clap)
+    # ── 7. Inicia e aguarda ───────────────────────────────────────────────────
+    logger.info("Aguardando sequência de palmas...")
+    detector.start(callback=on_clap_sequence)
 
     try:
         while True:

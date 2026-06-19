@@ -1,50 +1,39 @@
 # config/config.yaml
 # Configuração central do Puck
-# Edite este arquivo para personalizar o comportamento do sistema.
-# NUNCA coloque senhas ou API keys aqui — use o arquivo .env para isso.
-
-# ─────────────────────────────────────────────
-# CONFIGURAÇÕES DE ÁUDIO
-# ─────────────────────────────────────────────
 audio:
-  sample_rate: 44100        # Taxa de amostragem do microfone (Hz)
-  chunk_size: 1024          # Tamanho do buffer de leitura
-  clap_threshold: 3000      # Limiar de amplitude para detectar palma
-  double_clap_interval_ms: 800  # Janela máxima entre duas palmas (ms)
+  sample_rate: 44100 # Taxa de amostragem do microfone (Hz)
+  chunk_size: 1024 # Tamanho do buffer de leitura
+  clap_threshold: 3000 # Limiar de amplitude para detectar palma
+  double_clap_interval_ms: 800 # Janela máxima entre duas palmas (ms)
 
-# ─────────────────────────────────────────────
-# APLICATIVOS DISPONÍVEIS
-# Adicione aqui qualquer app que queira controlar.
-# O campo "path" deve ser o caminho completo do executável no Windows.
-# ─────────────────────────────────────────────
 apps:
   vscode:
     display_name: "VS Code"
-    path: "C:\\Users\\%USERNAME%\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"
+    path: "C:/Users/wkrod/AppData/Local/Programs/Microsoft VS Code/Code.exe"
 
   spotify:
     display_name: "Spotify"
-    path: "C:\\Users\\%USERNAME%\\AppData\\Roaming\\Spotify\\Spotify.exe"
+    path: "C:/Users/wkrod/AppData/Roaming/Spotify/Spotify.exe"
 
   chrome:
     display_name: "Google Chrome"
-    path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    path: "C:/Program Files/Google/Chrome/Application/operagx.exe"
 
   opera:
     display_name: "Opera GX"
-    path: "C:\\Users\\%USERNAME%\\AppData\\Local\\Programs\\Opera GX\\opera.exe"
+    path: "C:/Users/%USERNAME%/AppData/Local/Programs/Opera GX/opera.exe"
 
   wps_writer:
     display_name: "WPS Writer"
-    path: "C:\\Program Files (x86)\\Kingsoft\\WPS Office\\ksolaunch.exe"
+    path: "C:/Program Files (x86)/Kingsoft/WPS Office/ksolaunch.exe"
 
   steam:
     display_name: "Steam"
-    path: "C:\\Program Files (x86)\\Steam\\steam.exe"
+    path: "C:/Program Files (x86)/Steam/steam.exe"
 
   terminal:
     display_name: "Windows Terminal"
-    path: "wt.exe"  # Disponível no PATH do Windows por padrão
+    path: "wt.exe" # Disponível no PATH do Windows por padrão
 
 # ─────────────────────────────────────────────
 # MODOS DE TRABALHO
@@ -81,7 +70,7 @@ default_mode: ads
 # CONFIGURAÇÕES DE LOG
 # ─────────────────────────────────────────────
 logging:
-  level: INFO               # DEBUG, INFO, WARNING, ERROR
+  level: INFO # DEBUG, INFO, WARNING, ERROR
   log_to_file: true
   log_filename: "puck.log"
 
@@ -92,7 +81,7 @@ logging:
 # ─────────────────────────────────────────────
 ai:
   enabled: false
-  provider: "ollama"        # ollama | openai
+  provider: "ollama" # ollama | openai
   model: "llama3"
 
 api:
@@ -102,4 +91,4 @@ api:
 
 database:
   enabled: false
-  type: "sqlite"            # sqlite | postgresql
+  type: "sqlite" # sqlite | postgresql
