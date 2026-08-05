@@ -84,11 +84,16 @@ class PsutilSystemMonitor(SystemMonitor):
         """
         Retorna temperatura da CPU se disponível.
 
-        psutil.sensors_temperatures() não funciona em todos os sistemas.
-        Retornamos None em vez de lançar exceção — o caller decide o que fazer.
+        psutil.sensors_temperatures() não existe em todos os sistemas
+        (ex: Windows). Usamos getattr + try/except para degradar com
+        graça em vez de lançar exceção — o caller decide o que fazer.
         """
+        sensors = getattr(psutil, "sensors_temperatures", None)
+        if sensors is None:
+            return None
+
         try:
-            temps = psutil.sensors_temperatures()
+            temps = sensors()
             if not temps:
                 return None
 

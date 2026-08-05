@@ -6,6 +6,9 @@ PyAudio==0.2.14
 numpy==1.26.4
 psutil==5.9.8
 
+# Desenvolvimento / testes
+pytest==8.2.2
+
 # FUTURAS (não instale agora)
 # fastapi==0.111.0
 # uvicorn==0.30.1

@@ -17,11 +17,11 @@ apps:
 
   chrome:
     display_name: "Google Chrome"
-    path: "C:/Program Files/Google/Chrome/Application/operagx.exe"
+    path: "C:/Program Files/Google/Chrome/Application/chrome.exe"
 
   opera:
     display_name: "Opera GX"
-    path: "C:/Users/%USERNAME%/AppData/Local/Programs/Opera GX/opera.exe"
+    path: "C:/Users/wkrod/AppData/Local/Programs/Opera GX/opera.exe"
 
   wps_writer:
     display_name: "WPS Writer"
