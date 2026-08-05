@@ -18,6 +18,7 @@ Linha de comando suportada:
 import argparse
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from core.events import EventBus, EventType, PuckEvent, log_event
 from core.modes import ModeManager
 from modules.audio.detector import ClapDetector
 from modules.automation.launcher import WindowsAppLauncher
+from modules.monitor.service import MonitorService
 from modules.monitor.system_info import PsutilSystemMonitor
 from utils.logger import configure_logging, get_logger
 
@@ -96,6 +98,17 @@ def main() -> None:
     mode_manager = ModeManager(settings)
     launcher = WindowsAppLauncher(settings, mode_manager, event_bus=event_bus)
     monitor = PsutilSystemMonitor()
+
+    # Serviço de monitoramento contínuo — amostra em thread separada
+    monitor_cfg = settings.get("monitor", {})
+    monitor_service = MonitorService(
+        monitor,
+        interval=monitor_cfg.get("interval_seconds", 2.0),
+        cpu_alert_threshold=monitor_cfg.get("cpu_alert_threshold"),
+        memory_alert_threshold=monitor_cfg.get("memory_alert_threshold"),
+        event_bus=event_bus,
+    )
+
     detector = ClapDetector(settings)
 
     # ── 5. Modo utilitário: listar modos ─────────────────────────────────────
@@ -185,6 +198,7 @@ def main() -> None:
     def shutdown(signum, frame) -> None:
         logger.info("Encerrando Puck...")
         detector.stop()
+        monitor_service.stop()
         event_bus.publish(PuckEvent(EventType.SYSTEM_STOPPED, source="main"))
         logger.info("Puck encerrado.")
         sys.exit(0)
@@ -192,7 +206,37 @@ def main() -> None:
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    # ── 9. Inicia ─────────────────────────────────────────────────────────────
+    # ── 9. Inicia monitoramento contínuo ─────────────────────────────────────
+    monitor_service.start()
+
+    # ── 10. API REST (opcional) ──────────────────────────────────────────────
+    # Import lazy: se fastapi/uvicorn não estiverem instalados,
+    # o resto do Puck continua funcionando normalmente.
+    api_cfg = settings.get("api", {})
+    if api_cfg.get("enabled", False):
+        from api.server import create_app
+        import uvicorn
+
+        app = create_app(
+            launcher=launcher,
+            mode_manager=mode_manager,
+            monitor=monitor_service,
+            event_bus=event_bus,
+        )
+        host = api_cfg.get("host", "0.0.0.0")
+        port = int(api_cfg.get("port", 8000))
+
+        api_thread = threading.Thread(
+            target=uvicorn.run,
+            args=(app,),
+            kwargs={"host": host, "port": port},
+            daemon=True,
+            name="api-server",
+        )
+        api_thread.start()
+        logger.info(f"API iniciada em http://{host}:{port}")
+
+    # ── 11. Ativação inicial via --mode ──────────────────────────────────────
     event_bus.publish(PuckEvent(EventType.SYSTEM_STARTED, source="main"))
 
     if args.mode:

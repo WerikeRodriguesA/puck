@@ -75,6 +75,17 @@ logging:
   log_filename: "puck.log"
 
 # ─────────────────────────────────────────────
+# MONITORAMENTO DO SISTEMA
+# O serviço amostra as métricas em thread separada e mantém cache
+# para a API /metrics. Alertas são publicados como eventos quando
+# a métrica cruza o limite (None = alerta desligado).
+# ─────────────────────────────────────────────
+monitor:
+  interval_seconds: 2.0
+  cpu_alert_threshold: 90.0
+  memory_alert_threshold: 85.0
+
+# ─────────────────────────────────────────────
 # PLACEHOLDERS PARA EXPANSÃO FUTURA
 # Estas seções não fazem nada na V1 — existem para documentar
 # que o sistema já prevê estes módulos.
