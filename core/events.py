@@ -16,7 +16,13 @@ Por que usar eventos e não chamadas diretas:
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Callable, Optional
+
+import threading
+
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class EventType(Enum):
@@ -74,3 +80,88 @@ class PuckEvent:
             f"{self.source} → {self.type.name}"
             + (f" | {self.payload}" if self.payload else "")
         )
+
+
+Handler = Callable[["PuckEvent"], None]
+
+
+class EventBus:
+    """
+    Barramento de eventos — implementa o padrão Observer.
+
+    Como funciona:
+        Componentes publicam eventos SEM saber quem escuta (baixo acoplamento).
+        Quem quiser reagir a um evento, se registra como subscriber.
+
+        Exemplo:
+            launcher.publish(APP_LAUNCHED)  → quem está ouvindo reage.
+            Amanhã, um handler de IA ou de dashboard pode se registrar
+            sem que o launcher precise mudar UMA linha.
+
+    Thread-safe:
+        A detecção de palmas roda em thread separada e publica eventos
+        daqui de dentro — por isso o lock.
+
+    Tratamento de erros:
+        Um handler que lançar exceção é logado e não derruba os demais.
+        Publicar eventos nunca deve quebrar o fluxo principal.
+    """
+
+    def __init__(self) -> None:
+        # Handlers por tipo de evento
+        self._handlers: dict[EventType, list[Handler]] = {}
+        # Handlers "curinga" — recebem todos os eventos, qualquer tipo
+        self._wildcard_handlers: list[Handler] = []
+        self._lock = threading.Lock()
+
+    def subscribe(
+        self,
+        handler: Handler,
+        event_type: Optional[EventType] = None,
+    ) -> None:
+        """
+        Registra um handler.
+
+        Args:
+            handler: função chamada a cada evento.
+            event_type: se informado, o handler só recebe eventos deste tipo.
+                        Se None, recebe todos os eventos (curinga).
+        """
+        with self._lock:
+            if event_type is None:
+                self._wildcard_handlers.append(handler)
+            else:
+                self._handlers.setdefault(event_type, []).append(handler)
+
+    def publish(self, event: PuckEvent) -> None:
+        """
+        Notifica todos os subscribers sobre um evento.
+
+        Síncrono por design: os handlers são chamados na thread que publica.
+        Para a escala atual isso é o mais simples e previsível.
+
+        Args:
+            event: PuckEvent a ser distribuído.
+        """
+        with self._lock:
+            type_handlers = list(self._handlers.get(event.type, []))
+            wildcard_handlers = list(self._wildcard_handlers)
+
+        for handler in [*wildcard_handlers, *type_handlers]:
+            try:
+                handler(event)
+            except Exception:
+                logger.exception(
+                    f"Erro em handler do evento {event.type.name}"
+                )
+
+
+def log_event(event: PuckEvent) -> None:
+    """
+    Handler padrão: transforma qualquer evento em log estruturado.
+
+    Eventos de falha são logados como ERROR; os demais como INFO.
+    Registre este handler uma vez no EventBus e todo o sistema fica auditável.
+    """
+    level = logger.error if event.type == EventType.APP_LAUNCH_FAILED else logger.info
+    level(str(event))

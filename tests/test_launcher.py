@@ -13,8 +13,19 @@ from pathlib import Path
 import pytest
 
 from config.settings import Settings
+from core.events import EventType
 from core.modes import ModeManager
 from modules.automation.launcher import WindowsAppLauncher
+
+
+class FakeEventBus:
+    """Registra eventos publicados, sem depender da implementação real."""
+
+    def __init__(self) -> None:
+        self.events = []
+
+    def publish(self, event) -> None:
+        self.events.append(event)
 
 
 class TestWindowsAppLauncher:
@@ -188,3 +199,54 @@ class TestWindowsAppLauncher:
         launcher.launch_mode("ads")
 
         assert launched == [["C:/fake/spotify.exe"]]
+
+    def test_launch_emits_app_launched_event(
+        self, settings: Settings, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(Path, "exists", lambda self: True)
+        monkeypatch.setattr(
+            "modules.automation.launcher.subprocess.Popen",
+            lambda *a, **k: None,
+        )
+
+        bus = FakeEventBus()
+        launcher = WindowsAppLauncher(settings, ModeManager(settings), event_bus=bus)
+
+        assert launcher.launch("vscode") is True
+
+        types = [e.type for e in bus.events]
+        assert EventType.APP_LAUNCHED in types
+        assert bus.events[0].payload == "vscode"
+
+    def test_launch_emits_failed_event_when_app_missing(
+        self, settings: Settings, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(
+            "modules.automation.launcher.subprocess.Popen",
+            lambda *a, **k: pytest.fail("Não deveria abrir nada"),
+        )
+
+        bus = FakeEventBus()
+        launcher = WindowsAppLauncher(settings, ModeManager(settings), event_bus=bus)
+
+        assert launcher.launch("app_inexistente") is False
+
+        assert bus.events[0].type == EventType.APP_LAUNCH_FAILED
+
+    def test_launch_mode_emits_mode_activated_event(
+        self, settings: Settings, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(Path, "exists", lambda self: True)
+        monkeypatch.setattr(
+            "modules.automation.launcher.subprocess.Popen",
+            lambda *a, **k: None,
+        )
+
+        bus = FakeEventBus()
+        launcher = WindowsAppLauncher(settings, ModeManager(settings), event_bus=bus)
+
+        launcher.launch_mode("ads")
+
+        activated = [e for e in bus.events if e.type == EventType.MODE_ACTIVATED]
+        assert len(activated) == 1
+        assert activated[0].payload == "ads"

@@ -6,13 +6,23 @@ Responsabilidade deste arquivo:
 
     main.py NÃO implementa lógica de negócio.
     Ele monta as peças, define o que acontece em cada evento, e espera.
+
+Linha de comando suportada:
+    python main.py                      → escuta palmas (padrão)
+    python main.py --mode ads           → ativa o modo 'ads' ao iniciar
+    python main.py --no-audio           → não escuta palmas (sem microfone)
+    python main.py --config outro.yaml  → usa outro arquivo de configuração
+    python main.py --list-modes         → lista modos e encerra
 """
 
+import argparse
 import signal
 import sys
 import time
+from pathlib import Path
 
 from config.settings import Settings
+from core.events import EventBus, EventType, PuckEvent, log_event
 from core.modes import ModeManager
 from modules.audio.detector import ClapDetector
 from modules.automation.launcher import WindowsAppLauncher
@@ -20,9 +30,49 @@ from modules.monitor.system_info import PsutilSystemMonitor
 from utils.logger import configure_logging, get_logger
 
 
+def parse_args(argv=None) -> argparse.Namespace:
+    """
+    Interpreta os argumentos de linha de comando.
+
+    Separado de main() para ser testável de forma isolada.
+    """
+    parser = argparse.ArgumentParser(
+        prog="puck",
+        description="Puck — Personal Utility Control Kernel",
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Caminho alternativo para o config.yaml",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default=None,
+        help="Ativa um modo imediatamente ao iniciar (ex: --mode ads)",
+    )
+    parser.add_argument(
+        "--no-audio",
+        action="store_true",
+        help="Não inicia a escuta de palmas (útil sem microfone)",
+    )
+    parser.add_argument(
+        "--list-modes",
+        action="store_true",
+        help="Lista os modos disponíveis e encerra",
+    )
+    return parser.parse_args(argv)
+
+
 def main() -> None:
+    args = parse_args()
+
     # ── 1. Carrega configurações ──────────────────────────────────────────────
-    settings = Settings()
+    if args.config:
+        settings = Settings(config_path=Path(args.config))
+    else:
+        settings = Settings()
 
     # ── 2. Configura logs ────────────────────────────────────────────────────
     log_config = settings.get("logging", {})
@@ -36,13 +86,26 @@ def main() -> None:
     logger = get_logger(__name__)
     logger.info("Puck iniciando...")
 
-    # ── 3. Monta os módulos ───────────────────────────────────────────────────
+    # ── 3. Barramento de eventos ─────────────────────────────────────────────
+    # Qualquer componente publica eventos; quem quiser reagir se registra.
+    # log_event é o handler padrão: transforma tudo em log estruturado.
+    event_bus = EventBus()
+    event_bus.subscribe(log_event)
+
+    # ── 4. Monta os módulos ──────────────────────────────────────────────────
     mode_manager = ModeManager(settings)
-    launcher = WindowsAppLauncher(settings, mode_manager)
+    launcher = WindowsAppLauncher(settings, mode_manager, event_bus=event_bus)
     monitor = PsutilSystemMonitor()
     detector = ClapDetector(settings)
 
-    # ── 4. Lê o mapeamento de palmas → modos do config.yaml ──────────────────
+    # ── 5. Modo utilitário: listar modos ─────────────────────────────────────
+    if args.list_modes:
+        print("Modos disponíveis:")
+        for name in mode_manager.list_modes():
+            print(f"  - {name}")
+        return
+
+    # ── 6. Lê o mapeamento de palmas → modos do config.yaml ──────────────────
     #
     # Estrutura esperada no config.yaml:
     #   clap_modes:
@@ -69,7 +132,7 @@ def main() -> None:
         f"Mapeamento: { {k: v for k, v in clap_modes.items()} }"
     )
 
-    # ── 5. Define o callback de detecção ─────────────────────────────────────
+    # ── 7. Define o callback de detecção ─────────────────────────────────────
     def on_clap_sequence(clap_count: int) -> None:
         """
         Chamado pelo ClapDetector ao final de cada sequência de palmas.
@@ -82,6 +145,19 @@ def main() -> None:
             - on_clap_sequence: traduz número → nome do modo
             - launcher.launch_mode: executa o modo
         """
+        # Publica o evento de áudio — qualquer subscriber pode reagir
+        event_bus.publish(
+            PuckEvent(EventType.CLAP_DETECTED, payload=clap_count, source="audio")
+        )
+        if clap_count == 2:
+            event_bus.publish(
+                PuckEvent(
+                    EventType.DOUBLE_CLAP_DETECTED,
+                    payload=clap_count,
+                    source="audio",
+                )
+            )
+
         logger.info(f"Sequência recebida: {clap_count} palma(s)")
 
         mode_name = clap_modes.get(clap_count)
@@ -105,19 +181,29 @@ def main() -> None:
         logger.info(f"{clap_count} palma(s) → ativando modo '{mode_name}'")
         launcher.launch_mode(mode_name)
 
-    # ── 6. Configura encerramento gracioso ────────────────────────────────────
+    # ── 8. Configura encerramento gracioso ───────────────────────────────────
     def shutdown(signum, frame) -> None:
         logger.info("Encerrando Puck...")
         detector.stop()
+        event_bus.publish(PuckEvent(EventType.SYSTEM_STOPPED, source="main"))
         logger.info("Puck encerrado.")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    # ── 7. Inicia e aguarda ───────────────────────────────────────────────────
-    logger.info("Aguardando sequência de palmas...")
-    detector.start(callback=on_clap_sequence)
+    # ── 9. Inicia ─────────────────────────────────────────────────────────────
+    event_bus.publish(PuckEvent(EventType.SYSTEM_STARTED, source="main"))
+
+    if args.mode:
+        logger.info(f"--mode '{args.mode}': ativando modo ao iniciar")
+        launcher.launch_mode(args.mode)
+
+    if args.no_audio:
+        logger.info("--no-audio ativo: escuta de palmas desabilitada")
+    else:
+        logger.info("Aguardando sequência de palmas...")
+        detector.start(callback=on_clap_sequence)
 
     try:
         while True:
