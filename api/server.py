@@ -25,6 +25,7 @@ Endpoints:
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from core.events import EventBus, EventType, PuckEvent
@@ -69,10 +70,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         .progress-bar-bg { background: #334155; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 10px; }
         .progress-bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.5s ease; }
 
-        .modes-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-top: 12px; }
-        .btn-mode { background: #334155; color: var(--text-primary); border: 1px solid #475569; padding: 14px; border-radius: var(--border-radius); cursor: pointer; font-size: 1rem; font-weight: 600; transition: all 0.2s ease; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-        .btn-mode:hover { background: var(--accent); color: #000; border-color: var(--accent); transform: translateY(-2px); }
-        .btn-mode span.apps { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
+        .modes-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-top: 12px; }
+        .mode-item { background: #334155; border: 1px solid #475569; padding: 14px; border-radius: var(--border-radius); display: flex; flex-direction: column; gap: 8px; }
+        .btn-action { background: var(--accent); color: #000; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.2s ease; }
+        .btn-action:hover { background: var(--accent-hover); color: #fff; }
+        .btn-danger { background: #991b1b; color: #fee2e2; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+        .btn-danger:hover { background: var(--danger); color: #fff; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
+        th { color: var(--text-secondary); font-weight: 600; }
 
         .toast { position: fixed; bottom: 20px; right: 20px; background: var(--success); color: #000; padding: 12px 20px; border-radius: 8px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; }
     </style>
@@ -80,7 +87,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <body>
     <div class="container">
         <header>
-            <h1>⚡ Puck Control Center <span class="badge">V2.0</span></h1>
+            <h1>⚡ Puck Control Center <span class="badge">V3.0</span></h1>
             <div id="status-tag" style="color: var(--success); font-weight: 600;">● Online</div>
         </header>
 
@@ -120,6 +127,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     <div>🚀 <strong>Ativações de Modos:</strong> <span id="stat-activations">0</span></div>
                     <div>📱 <strong>Apps Disparados:</strong> <span id="stat-launches">0</span></div>
                 </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card" style="grid-column: span 3;">
+                <div class="card-title">PROCESSOS MAIS OFENSORES (MAIOR USO DE RAM)</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>PID</th>
+                            <th>NOME DO PROCESSO</th>
+                            <th>USO DE RAM (%)</th>
+                            <th>USO DE CPU (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="processes-table">
+                        <tr><td colspan="4" style="color: var(--text-secondary);">Carregando processos...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -177,6 +203,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             } catch (e) { console.error('Erro ao carregar estatísticas:', e); }
         }
 
+        async function loadTopProcesses() {
+            try {
+                const res = await fetch('/metrics/processes?limit=5');
+                if (!res.ok) return;
+                const data = await res.json();
+                const tbody = document.getElementById('processes-table');
+                tbody.innerHTML = '';
+                if (!data.processes || data.processes.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4">Nenhum processo reportado.</td></tr>';
+                    return;
+                }
+                for (const p of data.processes) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${p.pid}</td><td><strong>${p.name}</strong></td><td>${p.memory_percent}%</td><td>${p.cpu_percent}%</td>`;
+                    tbody.appendChild(tr);
+                }
+            } catch (e) { console.error('Erro ao carregar processos:', e); }
+        }
+
         async function loadModes() {
             try {
                 const res = await fetch('/modes');
@@ -186,11 +231,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 container.innerHTML = '';
 
                 for (const modeName of data.modes) {
-                    const btn = document.createElement('button');
-                    btn.className = 'btn-mode';
-                    btn.innerHTML = `<span>▶ ${modeName.toUpperCase()}</span><span class="apps">Clique para ativar</span>`;
-                    btn.onclick = () => activateMode(modeName);
-                    container.appendChild(btn);
+                    const item = document.createElement('div');
+                    item.className = 'mode-item';
+                    item.innerHTML = `
+                        <strong style="font-size: 1.1rem; color: var(--accent);">▶ ${modeName.toUpperCase()}</strong>
+                        <div style="display: flex; gap: 8px; margin-top: 4px;">
+                            <button class="btn-action" onclick="activateMode('${modeName}')">▶ Abrir</button>
+                            <button class="btn-danger" onclick="deactivateMode('${modeName}')">■ Fechar</button>
+                        </div>
+                    `;
+                    container.appendChild(item);
                 }
             } catch (e) { console.error('Erro ao carregar modos:', e); }
         }
@@ -207,11 +257,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             } catch (e) { showToast(`Falha de comunicação`); }
         }
 
+        async function deactivateMode(modeName) {
+            try {
+                const res = await fetch(`/modes/${modeName}/deactivate`, { method: 'POST' });
+                if (res.ok) {
+                    showToast(`Modo '${modeName}' encerrado!`);
+                    loadStats();
+                } else {
+                    showToast(`Erro ao encerrar modo '${modeName}'`);
+                }
+            } catch (e) { showToast(`Falha de comunicação`); }
+        }
+
         loadModes();
         loadMetrics();
         loadStats();
+        loadTopProcesses();
         setInterval(loadMetrics, 2000);
         setInterval(loadStats, 2000);
+        setInterval(loadTopProcesses, 5000);
     </script>
 </body>
 </html>
@@ -235,7 +299,16 @@ def create_app(
         event_bus: opcional — usado para publicar eventos de ativação.
         stats_tracker: opcional — fornece estatísticas de uso.
     """
-    app = FastAPI(title="Puck API", version="0.2.0")
+    app = FastAPI(title="Puck API", version="0.3.0")
+
+    # Adiciona middleware CORS para permitir requisições de origens externas/web
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/")
     def root() -> dict:
@@ -288,12 +361,40 @@ def create_app(
         launcher.launch_mode(mode_name)
         return {"mode": mode_name, "activated": True}
 
+    @app.post("/modes/{mode_name}/deactivate")
+    def deactivate_mode(mode_name: str) -> dict:
+        mode = mode_manager.get_mode(mode_name)
+        if not mode:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Modo '{mode_name}' não encontrado",
+            )
+
+        if hasattr(launcher, "deactivate_mode"):
+            launcher.deactivate_mode(mode_name)
+
+        return {"mode": mode_name, "deactivated": True}
+
+    @app.post("/apps/{app_name}/stop")
+    def stop_app(app_name: str) -> dict:
+        stopped = False
+        if hasattr(launcher, "close_app"):
+            stopped = launcher.close_app(app_name)
+        return {"app": app_name, "stopped": stopped}
+
     @app.get("/metrics")
     def metrics() -> dict:
         report = monitor.get_latest_report()
         if not report:
             report = monitor.get_full_report()
         return report
+
+    @app.get("/metrics/processes")
+    def top_processes(limit: int = 5) -> dict:
+        processes = []
+        if hasattr(monitor, "get_top_processes"):
+            processes = monitor.get_top_processes(limit=limit)
+        return {"processes": processes}
 
     @app.get("/stats")
     def stats() -> dict:
@@ -302,4 +403,5 @@ def create_app(
         return {"status": "StatsTracker não configurado"}
 
     return app
+
 

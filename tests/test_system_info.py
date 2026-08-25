@@ -182,3 +182,28 @@ class TestPsutilSystemMonitor:
         assert report["cpu"]["usage_percent"] == 20.0
         assert report["cpu"]["cores"] == 8
         assert report["temperature_celsius"] is None
+
+    def test_get_top_processes(self, monkeypatch) -> None:
+        class FakeProc:
+            def __init__(self, pid, name, memory):
+                self.info = {
+                    "pid": pid,
+                    "name": name,
+                    "cpu_percent": 5.0,
+                    "memory_percent": memory,
+                }
+
+        monkeypatch.setattr(
+            "modules.monitor.system_info.psutil.process_iter",
+            lambda attrs: [
+                FakeProc(100, "chrome.exe", 12.0),
+                FakeProc(200, "code.exe", 25.0),
+            ],
+        )
+
+        monitor = PsutilSystemMonitor()
+        procs = monitor.get_top_processes(limit=5)
+        assert len(procs) == 2
+        assert procs[0]["name"] == "code.exe"  # Ordenado por memória desc
+        assert procs[0]["memory_percent"] == 25.0
+

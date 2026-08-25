@@ -216,3 +216,63 @@ class WindowsAppLauncher(AppLauncher):
             f"{mode.display_name} ativado: "
             f"{success_count}/{len(mode.apps)} apps abertos com sucesso"
         )
+
+    def close_app(self, app_name: str) -> bool:
+        """
+        Encerra os processos ativos vinculados ao executável do aplicativo.
+
+        Args:
+            app_name: chave do aplicativo no config.yaml
+
+        Returns:
+            True se pelo menos um processo foi encerrado, False caso contrário.
+        """
+        path = self._settings.get_app_path(app_name)
+        if not path:
+            logger.warning(f"Não foi possível fechar '{app_name}': app não configurado.")
+            return False
+
+        resolved_path = os.path.expandvars(path)
+        exe_name = Path(resolved_path).name.lower()
+        closed_any = False
+
+        try:
+            for proc in psutil.process_iter(["name"]):
+                proc_name = proc.info.get("name")
+                if proc_name and proc_name.lower() == exe_name:
+                    proc.terminate()
+                    closed_any = True
+                    logger.info(f"Processo '{proc_name}' (PID {proc.pid}) finalizado.")
+        except Exception as e:
+            logger.error(f"Erro ao tentar fechar app '{app_name}': {e}")
+
+        return closed_any
+
+    def deactivate_mode(self, mode_name: str) -> None:
+        """
+        Desativa um modo de trabalho e encerra seus aplicativos.
+
+        Args:
+            mode_name: nome do modo a desativar
+        """
+        mode = self._mode_manager.get_mode(mode_name)
+        if not mode:
+            logger.warning(f"Modo '{mode_name}' não encontrado para desativação.")
+            return
+
+        logger.info(f"Desativando modo '{mode.display_name}'...")
+        for app_name in mode.apps:
+            self.close_app(app_name)
+
+        if self._mode_manager.get_current_mode() == mode:
+            self._mode_manager.deactivate()
+
+        if self._event_bus:
+            self._event_bus.publish(
+                PuckEvent(
+                    EventType.MODE_DEACTIVATED,
+                    payload=mode_name,
+                    source="launcher",
+                )
+            )
+

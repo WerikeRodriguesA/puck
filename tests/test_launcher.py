@@ -289,3 +289,46 @@ class TestWindowsAppLauncher:
         assert launcher.launch("vscode") is True
         assert launched == []  # Não deve chamar Popen pois o app já está rodando
 
+    def test_close_app_terminates_matching_process(
+        self, settings: Settings, monkeypatch
+    ) -> None:
+        terminated = []
+
+        class FakeProc:
+            def __init__(self, name, pid=123):
+                self.info = {"name": name}
+                self.pid = pid
+
+            def terminate(self):
+                terminated.append(self.info["name"])
+
+        monkeypatch.setattr(
+            "modules.automation.launcher.psutil.process_iter",
+            lambda attrs: [FakeProc("vscode.exe")],
+        )
+
+        launcher = WindowsAppLauncher(settings, ModeManager(settings))
+        assert launcher.close_app("vscode") is True
+        assert terminated == ["vscode.exe"]
+
+    def test_deactivate_mode_closes_all_apps_and_resets_mode(
+        self, settings: Settings, monkeypatch
+    ) -> None:
+        closed = []
+
+        def fake_close(self, app_name):
+            closed.append(app_name)
+            return True
+
+        monkeypatch.setattr(WindowsAppLauncher, "close_app", fake_close)
+
+        mode_manager = ModeManager(settings)
+        mode_manager.activate_mode("ads")
+        launcher = WindowsAppLauncher(settings, mode_manager)
+
+        launcher.deactivate_mode("ads")
+
+        assert closed == ["vscode", "spotify"]
+        assert mode_manager.get_current_mode() is None
+
+

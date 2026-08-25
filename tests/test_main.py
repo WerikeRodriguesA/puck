@@ -35,3 +35,8 @@ class TestParseArgs:
         args = main.parse_args(["--no-audio", "--mode", "gamer"])
         assert args.no_audio is True
         assert args.mode == "gamer"
+
+    def test_open_dashboard_flag(self) -> None:
+        args = main.parse_args(["--open-dashboard"])
+        assert args.open_dashboard is True
+

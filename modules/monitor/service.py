@@ -89,6 +89,11 @@ class MonitorService(SystemMonitor):
     def get_full_report(self) -> dict:
         return self._monitor.get_full_report()
 
+    def get_top_processes(self, limit: int = 5) -> list[dict]:
+        if hasattr(self._monitor, "get_top_processes"):
+            return self._monitor.get_top_processes(limit=limit)
+        return []
+
     # ──────────────────────────────────────────────────────────────────────────
     # API do serviço
     # ──────────────────────────────────────────────────────────────────────────

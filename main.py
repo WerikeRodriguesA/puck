@@ -66,6 +66,11 @@ def parse_args(argv=None) -> argparse.Namespace:
         action="store_true",
         help="Lista os modos disponíveis e encerra",
     )
+    parser.add_argument(
+        "--open-dashboard",
+        action="store_true",
+        help="Abre o Web Dashboard no navegador padrão ao iniciar a API",
+    )
     return parser.parse_args(argv)
 
 
@@ -251,6 +256,10 @@ def main() -> None:
         )
         api_thread.start()
         logger.info(f"API iniciada em http://{host}:{port}")
+
+        if args.open_dashboard:
+            import webbrowser
+            webbrowser.open(f"http://localhost:{port}/dashboard")
 
     # ── 11. Ativação inicial via --mode ──────────────────────────────────────
     event_bus.publish(PuckEvent(EventType.SYSTEM_STARTED, source="main"))

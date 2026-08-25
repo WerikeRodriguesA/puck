@@ -108,6 +108,33 @@ class PsutilSystemMonitor(SystemMonitor):
             # Windows frequentemente não suporta sensors_temperatures
             return None
 
+    def get_top_processes(self, limit: int = 5) -> list[dict]:
+        """
+        Retorna a lista dos N processos com maior uso de memória RAM no sistema.
+
+        Args:
+            limit: número máximo de processos a retornar (padrão: 5).
+
+        Returns:
+            Lista de dicionários com 'pid', 'name', 'cpu_percent' e 'memory_percent'.
+        """
+        processes = []
+        for proc in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
+            try:
+                info = proc.info
+                if info and info.get("name"):
+                    processes.append({
+                        "pid": info["pid"],
+                        "name": info["name"],
+                        "cpu_percent": round(info.get("cpu_percent") or 0.0, 1),
+                        "memory_percent": round(info.get("memory_percent") or 0.0, 1),
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+
+        processes.sort(key=lambda p: (p["memory_percent"], p["cpu_percent"]), reverse=True)
+        return processes[:limit]
+
     def get_full_report(self) -> dict:
         """
         Relatório completo do sistema.
@@ -128,3 +155,4 @@ class PsutilSystemMonitor(SystemMonitor):
 
         logger.debug(f"Relatório do sistema coletado: CPU {report['cpu']['usage_percent']}%")
         return report
+

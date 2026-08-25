@@ -146,3 +146,22 @@ class TestPuckApi:
         assert "uptime_seconds" in data
         assert data["total_claps_detected"] == 0
 
+    def test_deactivate_mode_endpoint(self, api_client) -> None:
+        client, _ = api_client
+        response = client.post("/modes/ads/deactivate")
+        assert response.status_code == 200
+        assert response.json() == {"mode": "ads", "deactivated": True}
+
+    def test_stop_app_endpoint(self, api_client) -> None:
+        client, _ = api_client
+        response = client.post("/apps/vscode/stop")
+        assert response.status_code == 200
+        assert "stopped" in response.json()
+
+    def test_top_processes_endpoint(self, api_client) -> None:
+        client, _ = api_client
+        response = client.get("/metrics/processes")
+        assert response.status_code == 200
+        assert "processes" in response.json()
+
+
