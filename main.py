@@ -88,6 +88,12 @@ def main() -> None:
     logger = get_logger(__name__)
     logger.info("Puck iniciando...")
 
+    # Valida configurações
+    validation_errors = settings.validate()
+    if validation_errors:
+        for err in validation_errors:
+            logger.warning(f"Inconsistência na configuração: {err}")
+
     # ── 3. Barramento de eventos ─────────────────────────────────────────────
     # Qualquer componente publica eventos; quem quiser reagir se registra.
     # log_event é o handler padrão: transforma tudo em log estruturado.

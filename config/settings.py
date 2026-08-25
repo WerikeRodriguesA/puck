@@ -101,5 +101,89 @@ class Settings:
             "double_clap_interval_ms": 800,
         })
 
+    def validate(self, raise_on_error: bool = False) -> list[str]:
+        """
+        Valida a integridade do arquivo de configuração.
+
+        Verifica:
+            - Se todos os apps referenciados nos modos existem em 'apps'.
+            - Se os modos mapeados em 'clap_modes' existem em 'modes'.
+            - Se o 'default_mode' existe em 'modes'.
+            - Se cada app possui um caminho definido.
+            - Se parâmetros numéricos essenciais são positivos.
+
+        Args:
+            raise_on_error: Se True, lança ValueError se houver erros de integridade.
+
+        Returns:
+            Lista de mensagens de erro/inconsistência encontradas.
+        """
+        errors: list[str] = []
+        apps = self._data.get("apps", {})
+        modes = self._data.get("modes", {})
+        clap_modes = self._data.get("clap_modes", {})
+        default_mode = self._data.get("default_mode")
+
+        if not isinstance(apps, dict):
+            errors.append("Seção 'apps' deve ser um dicionário.")
+            apps = {}
+
+        if not isinstance(modes, dict):
+            errors.append("Seção 'modes' deve ser um dicionário.")
+            modes = {}
+
+        # 1. Valida apps
+        for app_name, app_data in apps.items():
+            if not isinstance(app_data, dict) or not app_data.get("path"):
+                errors.append(f"Aplicativo '{app_name}' em 'apps' não possui o campo 'path' configurado.")
+
+        # 2. Valida modos -> apps
+        for mode_name, mode_data in modes.items():
+            if not isinstance(mode_data, dict):
+                errors.append(f"Modo '{mode_name}' deve ser um dicionário.")
+                continue
+            mode_apps = mode_data.get("apps", [])
+            if not isinstance(mode_apps, list):
+                errors.append(f"Campo 'apps' do modo '{mode_name}' deve ser uma lista.")
+                continue
+            for app_name in mode_apps:
+                if app_name not in apps:
+                    errors.append(
+                        f"Modo '{mode_name}' referencia o aplicativo '{app_name}', "
+                        f"que não está cadastrado na seção 'apps'."
+                    )
+
+        # 3. Valida clap_modes -> modes
+        if isinstance(clap_modes, dict):
+            for count, target_mode in clap_modes.items():
+                if target_mode not in modes:
+                    errors.append(
+                        f"Mapeamento 'clap_modes' ({count} palmas) referencia o modo '{target_mode}', "
+                        f"que não está cadastrado na seção 'modes'."
+                    )
+
+        # 4. Valida default_mode
+        if default_mode and default_mode not in modes:
+            errors.append(
+                f"Modo padrão 'default_mode' ({default_mode}) não está cadastrado na seção 'modes'."
+            )
+
+        # 5. Valida parâmetros numéricos
+        audio = self.audio_config
+        if audio.get("sample_rate", 0) <= 0:
+            errors.append("Parâmetro 'audio.sample_rate' deve ser maior que 0.")
+        if audio.get("chunk_size", 0) <= 0:
+            errors.append("Parâmetro 'audio.chunk_size' deve ser maior que 0.")
+
+        monitor = self.get("monitor", {})
+        if isinstance(monitor, dict) and monitor.get("interval_seconds", 1) <= 0:
+            errors.append("Parâmetro 'monitor.interval_seconds' deve ser maior que 0.")
+
+        if errors and raise_on_error:
+            raise ValueError("Erros de validação na configuração:\n" + "\n".join(f"- {e}" for e in errors))
+
+        return errors
+
     def __repr__(self) -> str:
         return f"Settings(config='{self._config_path}')"
+

@@ -21,6 +21,7 @@ Uso:
 """
 
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,8 @@ def configure_logging(
     log_to_file: bool = True,
     log_dir: Optional[Path] = None,
     log_filename: str = "puck.log",
+    max_bytes: int = 5 * 1024 * 1024,
+    backup_count: int = 3,
 ) -> None:
     """
     Configura o sistema de logging do Puck.
@@ -45,13 +48,15 @@ def configure_logging(
     Deve ser chamado UMA VEZ na inicialização (em main.py).
     Configura dois handlers:
         - Console: exibe logs coloridos no terminal
-        - Arquivo: salva todos os logs em disco (se habilitado)
+        - Arquivo: salva todos os logs em disco com rotação automática (se habilitado)
 
     Args:
         level: nível mínimo de log (DEBUG, INFO, WARNING, ERROR)
         log_to_file: se True, salva logs em arquivo
         log_dir: diretório para salvar o arquivo de log
         log_filename: nome do arquivo de log
+        max_bytes: tamanho máximo em bytes antes de rotacionar (padrão: 5MB)
+        backup_count: quantidade de arquivos de backup mantidos (padrão: 3)
     """
     global _configured
     if _configured:
@@ -71,12 +76,17 @@ def configure_logging(
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    # Handler de arquivo — opcional
+    # Handler de arquivo com rotação — opcional
     if log_to_file and log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
         file_path = log_dir / log_filename
 
-        file_handler = logging.FileHandler(file_path, encoding="utf-8")
+        file_handler = RotatingFileHandler(
+            file_path,
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
 

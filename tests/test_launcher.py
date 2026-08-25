@@ -250,3 +250,42 @@ class TestWindowsAppLauncher:
         activated = [e for e in bus.events if e.type == EventType.MODE_ACTIVATED]
         assert len(activated) == 1
         assert activated[0].payload == "ads"
+
+    def test_is_app_running_returns_true_when_process_found(
+        self, settings: Settings, monkeypatch
+    ) -> None:
+        class FakeProc:
+            def __init__(self, name):
+                self.info = {"name": name}
+
+        monkeypatch.setattr(
+            "modules.automation.launcher.psutil.process_iter",
+            lambda attrs: [FakeProc("vscode.exe")],
+        )
+
+        launcher = WindowsAppLauncher(settings, ModeManager(settings))
+        assert launcher.is_app_running("vscode") is True
+        assert launcher.is_app_running("spotify") is False
+
+    def test_launch_skips_when_check_running_is_true_and_process_is_running(
+        self, settings: Settings, monkeypatch
+    ) -> None:
+        launched = []
+
+        def fake_popen(cmd, **kwargs):
+            launched.append(cmd)
+
+        monkeypatch.setattr(Path, "exists", lambda self: True)
+        monkeypatch.setattr(
+            "modules.automation.launcher.subprocess.Popen", fake_popen
+        )
+        monkeypatch.setattr(
+            WindowsAppLauncher, "is_app_running", lambda self, app: True
+        )
+
+        launcher = WindowsAppLauncher(
+            settings, ModeManager(settings), check_running=True
+        )
+        assert launcher.launch("vscode") is True
+        assert launched == []  # Não deve chamar Popen pois o app já está rodando
+

@@ -35,6 +35,9 @@ apps:
     display_name: "Windows Terminal"
     path: "wt.exe" # Disponível no PATH do Windows por padrão
 
+automation:
+  check_running: true # Se true, ignora abertura se o app já estiver rodando
+
 # ─────────────────────────────────────────────
 # MODOS DE TRABALHO
 # Cada modo define quais apps serão abertos automaticamente.
