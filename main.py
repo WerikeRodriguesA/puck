@@ -26,9 +26,11 @@ from config.settings import Settings
 from core.events import EventBus, EventType, PuckEvent, log_event
 from core.modes import ModeManager
 from modules.audio.detector import ClapDetector
+from modules.audio.notifier import SoundNotifier
 from modules.automation.launcher import WindowsAppLauncher
 from modules.monitor.service import MonitorService
 from modules.monitor.system_info import PsutilSystemMonitor
+from modules.stats.tracker import StatsTracker
 from utils.logger import configure_logging, get_logger
 
 
@@ -104,6 +106,13 @@ def main() -> None:
     mode_manager = ModeManager(settings)
     launcher = WindowsAppLauncher(settings, mode_manager, event_bus=event_bus)
     monitor = PsutilSystemMonitor()
+    stats_tracker = StatsTracker(event_bus=event_bus)
+
+    audio_cfg = settings.audio_config
+    sound_notifier = SoundNotifier(
+        enabled=audio_cfg.get("sound_feedback", True),
+        event_bus=event_bus,
+    )
 
     # Serviço de monitoramento contínuo — amostra em thread separada
     monitor_cfg = settings.get("monitor", {})
@@ -228,6 +237,7 @@ def main() -> None:
             mode_manager=mode_manager,
             monitor=monitor_service,
             event_bus=event_bus,
+            stats_tracker=stats_tracker,
         )
         host = api_cfg.get("host", "0.0.0.0")
         port = int(api_cfg.get("port", 8000))

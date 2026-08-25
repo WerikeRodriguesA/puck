@@ -118,3 +118,31 @@ class TestPuckApi:
         response = client.get("/metrics")
         assert response.status_code == 200
         assert response.json() == REPORT
+
+    def test_dashboard_returns_html(self, api_client) -> None:
+        client, _ = api_client
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "Puck Control Center" in response.text
+
+    def test_stats_endpoint(self, settings: Settings) -> None:
+        from modules.stats.tracker import StatsTracker
+        bus = EventBus()
+        stats_tracker = StatsTracker(event_bus=bus)
+
+        app = create_app(
+            launcher=FakeLauncher(),
+            mode_manager=ModeManager(settings),
+            monitor=FakeMonitorService(REPORT),
+            event_bus=bus,
+            stats_tracker=stats_tracker,
+        )
+        client = TestClient(app)
+
+        response = client.get("/stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert "uptime_seconds" in data
+        assert data["total_claps_detected"] == 0
+
